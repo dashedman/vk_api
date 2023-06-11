@@ -431,17 +431,23 @@ class VkApi(object):
 
         self.logger.info('Checking remixsid...')
 
-        if not self._sid:
-            self.logger.info('No remixsid')
-            return
+        old_sid = self._sid
 
-        response = self.http.get('https://vk.com/feed2.php').json()
+        try:
+            response = self.http.get('https://vk.com/feed.php')
 
-        if response['user']['id'] != -1:
-            self.logger.info('remixsid is valid')
+            if not response.ok:
+                self.logger.info('remixsid is not valid')
+                return
+
+            if old_sid != self._sid:
+                self.logger.info('remixsid has been updated')
+                self.storage.cookies = cookies_to_list(self.http.cookies)
+                self.storage.save()
+
             return response
-
-        self.logger.info('remixsid is not valid')
+        except requests.exceptions.TooManyRedirects:
+            self.logger.info('remixsid is not valid')
 
     def _api_login(self):
         """ Получение токена через Desktop приложение """
