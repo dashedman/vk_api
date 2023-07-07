@@ -518,7 +518,11 @@ class VkApi(object):
 
             raise AuthError('API auth error: {}'.format(error_text))
 
+        elif 'redirect_uri' in response.url:
+            response.url = input(f"Enter url {response.url}: ")
+
         else:
+            self.logger.warning('Getting unknown response.url: %s', response.url)
             raise AuthError('Unknown API auth error')
 
     def server_auth(self):
