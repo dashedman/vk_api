@@ -476,6 +476,9 @@ class VkApi(object):
             if url:
                 response = self.http.get(url)
 
+        if 'redirect_uri' in response.url:
+            response.url = input(f"Enter url {response.url}: ")
+
         if 'access_token' in response.url:
             parsed_url = urllib.parse.urlparse(response.url)
             parsed_query = urllib.parse.parse_qs(parsed_url.query)
@@ -517,9 +520,6 @@ class VkApi(object):
                 error_text = error_data.get('error')
 
             raise AuthError('API auth error: {}'.format(error_text))
-
-        elif 'redirect_uri' in response.url:
-            response.url = input(f"Enter url {response.url}: ")
 
         else:
             self.logger.warning('Getting unknown response.url: %s', response.url)
