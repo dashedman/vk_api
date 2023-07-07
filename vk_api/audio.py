@@ -5,11 +5,12 @@
 
 :copyright: (c) 2019 python273
 """
-
+import logging
 import re
 import json
 import time
 from itertools import islice
+from typing import Generator
 
 from bs4 import BeautifulSoup
 
@@ -38,7 +39,7 @@ class VkAudio(object):
     :param vk: Объект :class:`VkApi`
     """
 
-    __slots__ = ('_vk', 'user_id', 'convert_m3u8_links')
+    __slots__ = ('_vk', 'user_id', 'convert_m3u8_links', 'logger')
 
     DEFAULT_COOKIES = [
         {  # если не установлено, то первый запрос ломается
@@ -88,6 +89,8 @@ class VkAudio(object):
         set_cookies_from_list(self._vk.http.cookies, self.DEFAULT_COOKIES)
 
         self._vk.http.get('https://m.vk.com/')  # load cookies
+
+        self.logger = logging.getLogger('vk_audio')
 
     def get_iter(self, owner_id=None, album_id=None, access_hash=None):
         """ Получить список аудиозаписей пользователя (по частям)
@@ -321,7 +324,7 @@ class VkAudio(object):
 
         return islice(self.search_iter(q, offset=offset), count)
 
-    def search_iter(self, q, offset=0):
+    def search_iter(self, q, offset=0) -> Generator[dict, None, None]:
         """ Искать аудиозаписи (генератор)
 
         :param q: запрос
@@ -344,10 +347,27 @@ class VkAudio(object):
 
         json_response = json.loads(response.text.replace('<!--', ''))
 
-        while json_response['payload'][1][1]['playlist']:
+        def get_all_tracks_from_json(json_data) -> dict | None:
+            playlists = json_data['payload'][1][1]['playlists']
+            target_playlist = next(
+                (
+                    p for p in playlists
+                    if p['title'] == 'Все аудиозаписи'
+                ),
+                None
+            )
+            if target_playlist is None:
+                exists_lists = [p['title'] for p in playlists if p['list']]
+                self.logger.warning(
+                    'Cannot find list of all tracks! Exists lists: %s',
+                    exists_lists
+                )
+            return target_playlist
+
+        while playlist := get_all_tracks_from_json(json_response):
 
             ids = scrap_ids(
-                json_response['payload'][1][1]['playlist']['list']
+                playlist['list']
             )
             if not ids:
                 break
@@ -368,13 +388,16 @@ class VkAudio(object):
 
             offset_left += len(ids)
 
+            if not playlist['hasMore']:
+                return
+
             response = self._vk.http.post(
                 'https://vk.com/al_audio.php',
                 data={
                     'al': 1,
                     'act': 'load_catalog_section',
                     'section_id': json_response['payload'][1][1]['sectionId'],
-                    'start_from': json_response['payload'][1][1]['nextFrom']
+                    'start_from': playlist['nextOffset']
                 }
             )
             json_response = json.loads(response.text.replace('<!--', ''))
