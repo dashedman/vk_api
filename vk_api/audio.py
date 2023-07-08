@@ -10,7 +10,7 @@ import re
 import json
 import time
 from itertools import islice
-from typing import Generator
+from typing import Generator, Iterable
 
 from bs4 import BeautifulSoup
 
@@ -330,11 +330,7 @@ class VkAudio(object):
         :param q: запрос
         :param offset: смещение
         """
-        offset_left = 0
-
-        response = self._vk.http.post(
-            'https://vk.com/al_audio.php',
-            data={
+        yield from self._iter_playlist_by_response({
                 'al': 1,
                 'act': 'section',
                 'claim': 0,
@@ -342,65 +338,28 @@ class VkAudio(object):
                 'owner_id': self.user_id,
                 'section': 'search',
                 'q': q
-            }
+            },
+            targets=('Все аудиозаписи',),
+            offset=offset
         )
 
-        json_response = json.loads(response.text.replace('<!--', ''))
+    def get_news_iter(self, offset=0):
+        """ Искать популярные аудиозаписи  (генератор)
 
-        def get_all_tracks_from_json(json_data) -> dict | None:
-            playlists = json_data['payload'][1][1]['playlists']
-            target_playlist = next(
-                (
-                    p for p in playlists
-                    if p['title'] == 'Все аудиозаписи'
-                ),
-                None
-            )
-            if target_playlist is None:
-                exists_lists = [p['title'] for p in playlists if p['list']]
-                self.logger.warning(
-                    'Cannot find list of all tracks! Exists lists: %s',
-                    exists_lists
-                )
-            return target_playlist
-
-        while playlist := get_all_tracks_from_json(json_response):
-
-            ids = scrap_ids(
-                playlist['list']
-            )
-            if not ids:
-                break
-
-            if offset_left + len(ids) >= offset:
-                if offset_left < offset:
-                    ids = ids[offset - offset_left:]
-
-                tracks = scrap_tracks(
-                    ids,
-                    self.user_id,
-                    convert_m3u8_links=self.convert_m3u8_links,
-                    http=self._vk.http
-                )
-
-                for track in tracks:
-                    yield track
-
-            offset_left += len(ids)
-
-            if not playlist['hasMore']:
-                return
-
-            response = self._vk.http.post(
-                'https://vk.com/al_audio.php',
-                data={
-                    'al': 1,
-                    'act': 'load_catalog_section',
-                    'section_id': json_response['payload'][1][1]['sectionId'],
-                    'start_from': playlist['nextOffset']
-                }
-            )
-            json_response = json.loads(response.text.replace('<!--', ''))
+        :param offset: смещение
+        """
+        yield from self._iter_playlist_by_response({
+                'al': 1,
+                'act': 'section',
+                'claim': 0,
+                'is_layer': 0,
+                'owner_id': self.user_id,
+                'block': 'new_songs',
+                'section': 'explore'
+            },
+            targets=('Новинки',),
+            offset=offset
+        )
 
     def get_updates_iter(self):
         """ Искать обновления друзей (генератор) """
@@ -460,14 +419,14 @@ class VkAudio(object):
         response = self._vk.http.post(
             'https://vk.com/audio',
             data={
-                'block': 'chart',
-                'section': 'recoms'
+                'block': 'tracks_chart',
+                'section': 'explore'
             }
         )
         json_response = json.loads(scrap_json(response.text))
 
         ids = scrap_ids(
-            json_response['sectionData']['recoms']['playlist']['list']
+            json_response['sectionData']['explore']['playlist']['list']
         )
 
         tracks = scrap_tracks(
@@ -480,62 +439,39 @@ class VkAudio(object):
         for track in tracks:
             yield track
 
-    def get_news_iter(self, offset=0):
-        """ Искать популярные аудиозаписи  (генератор)
+    def _iter_playlist_by_response(self, data, targets: Iterable[str], offset: int = 0):
+        """ Прокручивает плейлист,
+        который возвращает в ответ al_audio (генератор)
 
+        :param offset: параметры запроса в al_audio
+        :param targets: Название целевого плейлиста для поиска в ответе
         :param offset: смещение
         """
-
         offset_left = 0
 
         response = self._vk.http.post(
-            'https://vk.com/audio',
-            data={
-                'block': 'new_songs',
-                'section': 'recoms'
-            }
-        )
-        json_response = json.loads(scrap_json(response.text))
-
-        ids = scrap_ids(
-            json_response['sectionData']['recoms']['playlist']['list']
+            'https://vk.com/al_audio.php',
+            data=data
         )
 
-        if offset_left + len(ids) >= offset:
-            tracks = scrap_tracks(
-                ids if offset_left >= offset else ids[offset - offset_left:],
-                self.user_id,
-                convert_m3u8_links=self.convert_m3u8_links,
-                http=self._vk.http
-            )
+        json_response = json.loads(response.text.replace('<!--', ''))
 
-            for track in tracks:
-                yield track
-
-        offset_left += len(ids)
-
-        while True:
-            response = self._vk.http.post(
-                'https://vk.com/al_audio.php',
-                data={
-                    'al': 1,
-                    'act': 'load_catalog_section',
-                    'section_id': json_response['sectionData']['recoms']['sectionId'],
-                    'start_from': json_response['sectionData']['recoms']['nextFrom']
-                }
-            )
-
-            json_response = json.loads(response.text.replace('<!--', ''))
+        while playlist := self.get_target_playlist_from_json(
+                json_response, targets=targets
+        ):
 
             ids = scrap_ids(
-                json_response['payload'][1][1]['playlist']['list']
+                playlist['list']
             )
             if not ids:
                 break
 
             if offset_left + len(ids) >= offset:
+                if offset_left < offset:
+                    ids = ids[offset - offset_left:]
+
                 tracks = scrap_tracks(
-                    ids if offset_left >= offset else ids[offset - offset_left:],
+                    ids,
                     self.user_id,
                     convert_m3u8_links=self.convert_m3u8_links,
                     http=self._vk.http
@@ -545,6 +481,20 @@ class VkAudio(object):
                     yield track
 
             offset_left += len(ids)
+
+            if not playlist['hasMore']:
+                return
+
+            response = self._vk.http.post(
+                'https://vk.com/al_audio.php',
+                data={
+                    'al': 1,
+                    'act': 'load_catalog_section',
+                    'section_id': playlist['id'],
+                    'start_from': playlist['nextOffset']
+                }
+            )
+            json_response = json.loads(response.text.replace('<!--', ''))
 
     def get_audio_by_id(self, owner_id, audio_id):
         """ Получить аудиозапись по ID
@@ -647,6 +597,23 @@ class VkAudio(object):
         json_response = json.loads(response.text.replace('<!--', ''))
 
         return json_response
+
+    def get_target_playlist_from_json(self, json_data, targets: Iterable[str]) -> dict | None:
+        playlists = json_data['payload'][1][1]['playlists']
+        target_playlist = next(
+            (
+                p for p in playlists
+                if p['title'] in targets
+            ),
+            None
+        )
+        if target_playlist is None:
+            exists_lists = [p['title'] for p in playlists if p['list']]
+            self.logger.warning(
+                'Cannot find playlist for %s! Exists lists: %s',
+                list(targets), exists_lists
+            )
+        return target_playlist
 
 
 def scrap_ids(audio_data):
