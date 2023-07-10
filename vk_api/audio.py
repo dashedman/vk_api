@@ -599,7 +599,12 @@ class VkAudio(object):
         return json_response
 
     def get_target_playlist_from_json(self, json_data, targets: Iterable[str]) -> dict | None:
-        playlists = json_data['payload'][1][1]['playlists']
+        try:
+            playlists = json_data['payload'][1][1]['playlists']
+        except TypeError as e:
+            self.logger.error('Catch error while unpacking json response: %s',
+                              json_data)
+            raise e
         target_playlist = next(
             (
                 p for p in playlists
