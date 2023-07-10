@@ -424,10 +424,12 @@ class VkAudio(object):
             }
         )
         json_response = json.loads(scrap_json(response.text))
-
-        ids = scrap_ids(
-            json_response['sectionData']['explore']['playlist']['list']
-        )
+        try:
+            playlist = json_response['sectionData']['explore']['playlist']['list']
+        except TypeError:
+            self.logger.error('Catch error while load popular. Raw: %s', json_response)
+            raise
+        ids = scrap_ids(playlist)
 
         tracks = scrap_tracks(
             ids[offset:] if offset else ids,
