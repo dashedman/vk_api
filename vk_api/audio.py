@@ -438,9 +438,9 @@ class VkAudio(object):
             json_response = json.loads(response.text.replace('<!--', ''))
             playlist = self.get_target_playlist_from_json(
                 json_response,
-                targets=('Чарт треков')
+                targets=('Чарт треков',)
             )
-        ids = scrap_ids(playlist)
+        ids = scrap_ids(playlist['list'])
 
         tracks = scrap_tracks(
             ids[offset:] if offset else ids,
