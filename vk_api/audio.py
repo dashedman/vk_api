@@ -424,11 +424,22 @@ class VkAudio(object):
             }
         )
         json_response = json.loads(scrap_json(response.text))
-        try:
-            playlist = json_response['sectionData']['explore']['playlist']['list']
-        except TypeError:
-            self.logger.error('Catch error while load popular. Raw: %s', json_response)
-            raise
+
+        playlist = json_response['sectionData']['explore']['playlist']
+        if not playlist:
+            response = self._vk.http.post(
+                'https://vk.com/al_audio.php',
+                data={
+                    'al': 1,
+                    'act': 'load_catalog_section',
+                    'section_id': json_response['sectionData']['explore']['sectionId'],
+                }
+            )
+            json_response = json.loads(response.text.replace('<!--', ''))
+            playlist = self.get_target_playlist_from_json(
+                json_response,
+                targets=('Чарт треков')
+            )
         ids = scrap_ids(playlist)
 
         tracks = scrap_tracks(
