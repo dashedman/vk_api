@@ -14,8 +14,9 @@ from typing import Generator, Iterable
 
 from bs4 import BeautifulSoup
 
+import vk_api
 from .audio_url_decoder import decode_audio_url
-from .exceptions import AccessDenied
+from .exceptions import AccessDenied, RetryAudioRequest
 from .utils import set_cookies_from_list
 from .upload import FilesOpener
 
@@ -81,7 +82,7 @@ class VkAudio(object):
         }
     ]
 
-    def __init__(self, vk, convert_m3u8_links=True):
+    def __init__(self, vk: vk_api.VkApi, convert_m3u8_links=True):
         self.user_id = vk.method('users.get')[0]['id']
         self._vk = vk
         self.convert_m3u8_links = convert_m3u8_links
@@ -462,17 +463,21 @@ class VkAudio(object):
         """
         offset_left = 0
 
-        response = self._vk.http.post(
-            'https://vk.com/al_audio.php',
-            data=data
-        )
+        def first_playlist():
+            first_response = self._vk.http.post(
+                'https://vk.com/al_audio.php',
+                data=data
+            )
+            first_json = json.loads(first_response.text.replace('<!--', ''))
+            return self.get_target_playlist_from_json(
+                first_json, targets=targets)
 
-        json_response = json.loads(response.text.replace('<!--', ''))
+        try:
+            playlist = first_playlist()
+        except RetryAudioRequest:
+            playlist = first_playlist()
 
-        while playlist := self.get_target_playlist_from_json(
-                json_response, targets=targets
-        ):
-
+        while playlist:
             ids = scrap_ids(
                 playlist['list']
             )
@@ -508,6 +513,10 @@ class VkAudio(object):
                 }
             )
             json_response = json.loads(response.text.replace('<!--', ''))
+            # next part of playlist
+            playlist = self.get_target_playlist_from_json(
+                json_response, targets=targets
+            )
 
     def get_audio_by_id(self, owner_id, audio_id):
         """ Получить аудиозапись по ID
@@ -612,11 +621,15 @@ class VkAudio(object):
         return json_response
 
     def get_target_playlist_from_json(self, json_data, targets: Iterable[str]) -> dict | None:
+        if type(json_data['payload'][1][1]) == str:
+            self._vk.auth()
+            raise RetryAudioRequest(f'Catch error while unpacking json response: {json.dumps(json_data)}')
+
         try:
             playlists = json_data['payload'][1][1]['playlists']
         except TypeError as e:
             self.logger.error('Catch error while unpacking json response: %s',
-                              json_data)
+                              json.dumps(json_data))
             raise e
         target_playlist = next(
             (
@@ -770,6 +783,7 @@ def scrap_albums(html):
         })
 
     return albums
+
 
 def base36encode():
     number = int(time.time() * 1000)
