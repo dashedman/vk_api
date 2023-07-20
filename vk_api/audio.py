@@ -453,6 +453,44 @@ class VkAudio(object):
         for track in tracks:
             yield track
 
+    def search_albums_iter(self, q) -> Generator[dict, None, None]:
+        """ Искать альбомы (генератор)
+
+        :param q: запрос
+        """
+        response = self._vk.http.post(
+            'https://vk.com/al_audio.php',
+            data={
+                'al': 1,
+                'act': 'section',
+                'claim': 0,
+                'is_layer': 0,
+                'owner_id': self.user_id,
+                'section': 'search',
+                'q': q
+            }
+        )
+        json_response = json.loads(response.text.replace('<!--', ''))
+        raw_html = json_response['payload'][1][0]
+        raw_html = raw_html.split('CatalogSearchGlobalAlbumsHeader', 1)[1]
+        raw_html = raw_html.split('/audio?section=recoms_block&type=', 1)[1]
+        block_id = raw_html.split('"', 1)[0]
+
+        response = self._vk.http.post(
+            'https://vk.com/al_audio.php',
+            data={
+                'al': 1,
+                'act': 'load_catalog_section',
+                'section_id': block_id,
+            }
+        )
+        json_response = json.loads(response.text.replace('<!--', ''))
+        playlists = json_response['payload'][1][1]['playlists']
+        albums = scrap_albums_from_al(playlists)
+
+        for album in albums:
+            yield album
+
     def _iter_playlist_by_response(self, data, targets: Iterable[str], offset: int = 0):
         """ Прокручивает плейлист,
         который возвращает в ответ al_audio (генератор)
@@ -782,6 +820,43 @@ def scrap_albums(html):
             'plays': plays
         })
 
+    return albums
+
+
+def scrap_albums_from_al(playlists):
+    albums = []
+
+    for raw_album in playlists:
+        if raw_album['type'] != 'playlist':
+            continue
+
+        stats_text = raw_album['infoLine2']
+
+        # "1<span class="num_delim"> </span>448<span class="num_delim"> </span>929 прослушиваний<span class="dvd"></span>9 аудиозаписей"
+        try:
+            plays = int(
+                stats_text
+                .rsplit('<span', 1)[0]
+                .replace('<span class="num_delim"> </span>', '')
+                .rsplit(' ', 1)[0]
+            )   # 1448929
+        except (ValueError, IndexError):
+            plays = None
+
+        full_id = (raw_album['ownerId'], raw_album['id'])
+        albums.append({
+            'id': full_id[1],
+            'owner_id': full_id[0],
+            'url': 'https://m.vk.com/audio?act=audio_playlist{}_{}'.format(
+                *full_id
+            ),
+            'access_hash': raw_album['accessHash'],
+
+            'title': raw_album['title'],
+            'artist': raw_album['authorName'],
+            'count': raw_album['totalCount'],
+            'plays': plays
+        })
     return albums
 
 
