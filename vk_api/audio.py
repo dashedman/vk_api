@@ -473,19 +473,23 @@ class VkAudio(object):
         json_response = json.loads(response.text.replace('<!--', ''))
         raw_html = json_response['payload'][1][0]
         raw_html = raw_html.split('CatalogSearchGlobalAlbumsHeader', 1)[1]
-        raw_html = raw_html.split('/audio?section=recoms_block&type=', 1)[1]
-        block_id = raw_html.split('"', 1)[0]
+        try:
+            raw_html = raw_html.split('/audio?section=recoms_block&type=', 1)[1]
+        except IndexError:
+            playlists = json_response['payload'][1][1]['playlists']
+        else:
+            block_id = raw_html.split('"', 1)[0]
 
-        response = self._vk.http.post(
-            'https://vk.com/al_audio.php',
-            data={
-                'al': 1,
-                'act': 'load_catalog_section',
-                'section_id': block_id,
-            }
-        )
-        json_response = json.loads(response.text.replace('<!--', ''))
-        playlists = json_response['payload'][1][1]['playlists']
+            response = self._vk.http.post(
+                'https://vk.com/al_audio.php',
+                data={
+                    'al': 1,
+                    'act': 'load_catalog_section',
+                    'section_id': block_id,
+                }
+            )
+            json_response = json.loads(response.text.replace('<!--', ''))
+            playlists = json_response['payload'][1][1]['playlists']
         albums = scrap_albums_from_al(playlists)
 
         for album in albums:
