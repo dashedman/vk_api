@@ -669,7 +669,7 @@ class VkAudio(object):
 
         try:
             playlists = json_data['payload'][1][1]['playlists']
-        except TypeError as e:
+        except Exception as e:
             self.logger.error('Catch error while unpacking json response: %s',
                               json.dumps(json_data))
             raise e
