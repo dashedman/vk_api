@@ -759,10 +759,15 @@ def scrap_tracks(ids, user_id, http, convert_m3u8_links=True):
         if delay > 0:
             time.sleep(delay)
 
-        result = http.post(
+        response = http.post(
             'https://m.vk.com/audio',
-            data={'act': 'reload_audio', 'ids': ','.join(['_'.join(i) for i in ids_group])}
-        ).json()
+            data={'act': 'reload_audio', 'ids': ','.join(['_'.join(i) for i in ids_group])},
+            stream=True,
+        )
+        raw_result = b''
+        for chunk in response.iter_content():
+            raw_result += chunk
+        result = json.loads(raw_result)
 
         last_request = time.time()
         if result['data']:
