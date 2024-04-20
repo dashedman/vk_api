@@ -258,7 +258,8 @@ class VkAudio(object):
         else:
             return []
 
-    def edit_audio(self, audio_id: int, owner_id: int, hash: str, performer: str, title: str, text: str = "", genre: int = 1001):
+    def edit_audio(self, audio_id: int, owner_id: int, hash: str, performer: str, title: str, text: str = "",
+                   genre: int = 1001):
         """ Редактировать аудиозапись
 
         :param audio_id: ID аудиозаписи
@@ -332,14 +333,14 @@ class VkAudio(object):
         :param offset: смещение
         """
         yield from self._iter_playlist_by_response({
-                'al': 1,
-                'act': 'section',
-                'claim': 0,
-                'is_layer': 0,
-                'owner_id': self.user_id,
-                'section': 'search',
-                'q': q
-            },
+            'al': 1,
+            'act': 'section',
+            'claim': 0,
+            'is_layer': 0,
+            'owner_id': self.user_id,
+            'section': 'search',
+            'q': q
+        },
             targets=('Все аудиозаписи',),
             offset=offset
         )
@@ -350,14 +351,14 @@ class VkAudio(object):
         :param offset: смещение
         """
         yield from self._iter_playlist_by_response({
-                'al': 1,
-                'act': 'section',
-                'claim': 0,
-                'is_layer': 0,
-                'owner_id': self.user_id,
-                'block': 'new_songs',
-                'section': 'explore'
-            },
+            'al': 1,
+            'act': 'section',
+            'claim': 0,
+            'is_layer': 0,
+            'owner_id': self.user_id,
+            'block': 'new_songs',
+            'section': 'explore'
+        },
             targets=('Новинки',),
             offset=offset
         )
@@ -636,7 +637,7 @@ class VkAudio(object):
         json_response = json.loads(response.text.replace('<!--', ''))
 
         return json_response
-    
+
     def unfollow_user(self, user_id):
         data = self._vk.http.get(f"https://vk.com/audios{user_id}")
 
@@ -694,11 +695,7 @@ def scrap_ids(audio_data):
     ids = []
 
     for track in audio_data:
-        audio_hashes = track[13].split("/")
-
-        full_id = (
-            str(track[1]), str(track[0]), audio_hashes[2], audio_hashes[5]
-        )
+        full_id = str(track[1]), str(track[0]), track[24]
         if all(full_id):
             ids.append(full_id)
 
@@ -750,7 +747,6 @@ def scrap_ids_from_html(html, filter_root_el=None):
 
 
 def scrap_tracks(ids, user_id, http, convert_m3u8_links=True):
-
     last_request = 0.0
 
     for ids_group in [ids[i:i + 10] for i in range(0, len(ids), 10)]:
@@ -760,18 +756,18 @@ def scrap_tracks(ids, user_id, http, convert_m3u8_links=True):
             time.sleep(delay)
 
         response = http.post(
-            'https://m.vk.com/audio',
-            data={'act': 'reload_audio', 'ids': ','.join(['_'.join(i) for i in ids_group])},
-            stream=True,
+            'https://vk.com/al_audio.php',
+            data={
+                'al': 1,
+                'audio_ids': ','.join(['_'.join(i) for i in ids_group])
+            },
+            params={'act': 'reload_audios'},
         )
-        raw_result = b''
-        for chunk in response.iter_content():
-            raw_result += chunk
-        result = json.loads(raw_result)
+        result = json.loads(response.text.replace('<!--', ''))
 
         last_request = time.time()
-        if result['data']:
-            data_audio = result['data'][0]
+        if result['payload']:
+            data_audio = result['payload'][1][0]
             for audio in data_audio:
                 artist = BeautifulSoup(audio[4], 'html.parser').text
                 title = BeautifulSoup(audio[3].strip(), 'html.parser').text
@@ -848,7 +844,7 @@ def scrap_albums_from_al(playlists):
                 .rsplit('<span', 1)[0]
                 .replace('<span class="num_delim"> </span>', '')
                 .rsplit(' ', 1)[0]
-            )   # 1448929
+            )  # 1448929
         except (ValueError, IndexError):
             plays = None
 
