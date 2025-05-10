@@ -341,7 +341,7 @@ class VkAudio(object):
             'section': 'search',
             'q': q
         },
-            targets=('Все аудиозаписи',),
+            targets=('Все треки',),
             offset=offset
         )
 
